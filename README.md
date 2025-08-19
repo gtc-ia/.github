@@ -1,87 +1,69 @@
-# .github
-n8n, ai-agents, postgresql, automation, telegram, openai, workflow, gtc, startup
-Перейти к содержанию
-Меню навигации
-gtc-ia
-.github
 
-Введите /для поиска
-Код
-Проблемы
-Запросы на извлечение
-Действия
-Проекты
-Вики
-Безопасность
-Инсайты
-Настройки
-Релизы: gtc-ia/.github
-РелизыТеги
-Найти релиз
-В1.0
-5 минут назад
-@kfilipenko кфилипенко
- В1.0
- 6fefc1d
-В1.0 Последний
+# @Seal agent — reproducible package
 
-gtc-form-баннер
-n8n, postgresql, автоматизация, агенты искусственного интеллекта, телеграм-бот, бизнес-процессы, gtc
+This folder contains the minimal set of files to reproduce the working Telegram flow in n8n (MarkdownV2 safe, chunked messages, robust DB writes).
 
-Лицензия
-Последний коммит
-Живое приложение
+## Files
 
-🚀 GTC Workflow Platform — это платформа автоматизации на базе искусственного интеллекта, предназначенная для оптимизации глобальной торговли: от интеллектуального поиска поставщиков продукции до оркестровки бизнес-логики.
+- `code/SanitizeForTelegram.js` — Code node to escape MarkdownV2 and split long messages into chunks under Telegram's 4096 char limit.
+- `sql/register_or_find_user.sql` — Upsert user by Telegram ID; **no chat logging here**.
+- `sql/save_user_message.sql` — Single point of logging **incoming** messages (stores raw Telegram update into `metadata`).
+- `sql/update_bot_response.sql` — Updates the same `chat_log` record **after** sending the bot reply (stores `response` and `metadata.tg_out.message_id`).
 
-Эта платформа, созданная с использованием n8n, PostgreSQL, OpenAI и модульных агентов ИИ, объединяет многоканальное взаимодействие с пользователем (Telegram, Web, API) с динамическим выполнением рабочих процессов.
+> Keep your n8n export of the workflow, e.g. `workflows/@Seal_agent.json`, alongside these files.
 
-🎯 Наша миссия: Демократизировать доступ к технологиям интеллектуальной торговли путем объединения автоматизации, прозрачности и этического ИИ — по одному интеллектуальному рабочему процессу за раз.
+## Expected DB tables (columns used)
 
-🧠 Варианты использования:
+- `user(id uuid pk, role text, createdAt timestamptz, gtc_user_id int or uuid)`
+- `auth_telegram(user_id uuid fk, telegram_id bigint unique, username text, first_name text, last_name text, chat_count int, created_at timestamptz, updated_at timestamptz)`
+- `chat_log(id serial/bigserial pk, user_id uuid fk, gtc_user_id int/uuid, message text, response text, channel text, session_id text, timestamp timestamptz, metadata jsonb)`
 
-Агенты ИИ, которые находят и рекомендуют продукты на основе реальных потребностей человека
+> Adjust types to your schema if they differ; the SQL uses only the columns listed above.
 
-Telegram-боты, которые консультируют пользователей в режиме реального времени
+## n8n node wiring (critical)
 
-Обогащение данных и обнаружение мошенничества с использованием хэш-кластеризации
+1) **Telegram Trigger** → **RegisterOrFind User** → **Save User Message1**.  
+   - `Save User Message1` query = `sql/save_user_message.sql`  
+   - Parameters:  
+     - `$1` = `{{ $node["RegisterOrFind User"].json["user_id"] }}`  
+     - `$2` = `{{ $node["RegisterOrFind User"].json["gtc_user_id"] }}`  
+     - `$3` = `{{ $node["Telegram Trigger"].json["message"]["text"] || $node["Telegram Trigger"].json["message"]["caption"] || "[non_text_message]" }}`  
+     - `$4` = `{{ $node["Telegram Trigger"].json["message"]["chat"]["id"] }}`  
+     - `$5` = `{{ JSON.stringify($node["Telegram Trigger"].json) }}`
 
-Конструктор рабочих процессов для автоматизации электронной коммерции, CRM и операций
+2) **Prompt/AI Agent** branch as you have it (no changes needed here).
 
-👥 Кого мы ищем:
+3) **SanitizeForTelegram (Code)** → **Telegram SendMessage**  
+   - Code: `code/SanitizeForTelegram.js`  
+   - Telegram node:  
+     - **Parse Mode** = `MarkdownV2`  
+     - **Text** (Expression) = `{{ $json.tg_text }}` (no leading `=`)  
 
-Инженеры-визионеры и системные мыслители
+4) **Save Bot Response** after Telegram send (UPDATE):  
+   - Query = `sql/update_bot_response.sql`  
+   - Parameters:  
+     - `$1` = `{{ $node["Save User Message1"].json["id"] }}`  
+     - `$2` = `{{ $node["AI Agent"].json["output"] }}`  
+     - `$3` = `{{ $json["message_id"] || $json["result"]?.["message_id"] }}`  
+     - `$4` = `{{ $json["chat"]?.["id"] || $json["result"]?.["chat"]?.["id"] }}`  
+     - `$5` = `{{ JSON.stringify($json) }}`
 
-Энтузиасты данных и искусственного интеллекта
+## Telegram gotchas
 
-Люди, которым важна открытая инфраструктура и программное обеспечение, ориентированное на результаты
+- Escape is mandatory under MarkdownV2, including characters like `_ * [ ] ( ) ~ ` > # + - = | { } . !`.
+- Do **not** put any literal characters before `{{ ... }}` in Text (no leading `=`).  
+- Long messages are chunked to ~3500 characters automatically in `SanitizeForTelegram`.
 
-💡 Поддерживается Microsoft для стартапов и Google Cloud Credits.
-🛠 Используется для поддержки GTCHAIN.IO и будущих коммерческих решений на базе DAO.
+## Test checklist
 
-Ресурсы 2
-Исходный код
-(почтовый индекс)
-29 минут назад
-Исходный код
-(tar.gz)
-29 минут назад
-Нижний колонтитулGTC ИНФОРМАЦИОННЫЕ ТЕХНОЛОГИИ ФЗ-ООО
-GTC INFORMATION TECHNOLOGY FZ-LLC аватар
-GTC ИНФОРМАЦИОННЫЕ ТЕХНОЛОГИИ ФЗ-ООО
-Linkedin GTC ИТ
-Аудитор GTC IT
-Linkedin GTC ИТ
-Аудитор GTC IT
-© 2025 GitHub, Inc.
-Навигация нижнего колонтитула
-Условия
-Конфиденциальность
-Безопасность
-Статус
-Документы
-Контакт
-Управление куки-файлами
-Не разглашайте мою личную информацию
-Объяснить![gtc-form-banner](https://github.com/user-attachments/assets/aab043d1-8209-45c7-a3df-7081bac91907)
+- Amounts and symbols: `2000$`, `50%`, `A=B`  
+- Wi‑Fi / email / URLs with `[]()`  
+- Emojis 😄 🛍️  
+- Long answers (>4096) — should arrive as multiple messages  
+- Non-text messages (photo/video/voice) — `message` gets `[non_text_message]`; raw update is in `metadata`
 
+## Security notes
+
+- Never commit tokens/credentials; keep them in n8n credentials or env vars.
+- If you export workflows, scrub credential IDs and secrets.
+- Consider row-level security for user-scoped reads if exposing an API later.
